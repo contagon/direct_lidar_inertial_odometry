@@ -32,7 +32,11 @@
 #include <string>
 #include <sys/times.h>
 #include <thread>
+#ifdef __APPLE__
+#include <malloc/malloc.h>
+#else
 #include <malloc.h>
+#endif
 
 template <typename T>
 std::string to_string_with_precision(const T a_value, const int n = 6)
