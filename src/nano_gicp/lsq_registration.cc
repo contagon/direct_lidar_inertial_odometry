@@ -42,10 +42,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *************************************************************************/
 
-#include "dlio/dlio.h"
 #include "nano_gicp/lsq_registration.h"
-
-template class nano_gicp::LsqRegistration<PointType, PointType>;
+#include "dlio/dlio.h"
 
 namespace nano_gicp {
 
@@ -228,4 +226,7 @@ bool LsqRegistration<PointTarget, PointSource>::step_lm(Eigen::Isometry3d& x0, E
   return false;
 }
 
-}  // namespace nano_gicp
+} // namespace nano_gicp
+
+// Explicit template instantiation must come after all member definitions
+template class nano_gicp::LsqRegistration<PointType, PointType>;

@@ -11,10 +11,11 @@
 ###########################################################
 
 cmake_minimum_required(VERSION 3.12.4)
-project(direct_lidar_inertial_odometry)
+project(direct_lidar_inertial_odometry VERSION 1.1.1)
 
 add_compile_options(-std=c++17)
 set(CMAKE_BUILD_TYPE "Release")
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package( PCL REQUIRED )
 include_directories(${PCL_INCLUDE_DIRS})
@@ -33,50 +34,7 @@ else(OPENMP_FOUND)
   message("ERROR: OpenMP could not be found.")
 endif(OPENMP_FOUND)
 
-set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
-set(THREADS_PREFER_PTHREAD_FLAG TRUE)
-find_package(Threads REQUIRED)
-
-find_package(catkin REQUIRED COMPONENTS
-  roscpp
-  std_msgs
-  sensor_msgs
-  geometry_msgs
-  nav_msgs
-  pcl_ros
-  message_generation
-)
-
-add_service_files(
-  DIRECTORY srv
-  FILES
-  save_pcd.srv
-)
-
-generate_messages(
-  DEPENDENCIES
-  sensor_msgs
-  std_msgs
-  geometry_msgs
-)
-
-catkin_package(
-  CATKIN_DEPENDS
-    roscpp
-    std_msgs
-    sensor_msgs
-    geometry_msgs
-    pcl_ros
-  INCLUDE_DIRS
-    include
-  LIBRARIES
-    ${PROJECT_NAME}
-    nano_gicp
-    nanoflann
-)
-
 include_directories(include)
-include_directories(SYSTEM ${catkin_INCLUDE_DIRS})
 
 # Not all machines have <cpuid.h> available
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
@@ -88,32 +46,23 @@ if(HAS_CPUID)
 endif()
 
 # NanoFLANN
-add_library(nanoflann STATIC
-  src/nano_gicp/nanoflann.cc
-)
-target_link_libraries(nanoflann ${PCL_LIBRARIES})
+find_package(nanoflann CONFIG REQUIRED)
 
 # NanoGICP
 add_library(nano_gicp STATIC
   src/nano_gicp/lsq_registration.cc
   src/nano_gicp/nano_gicp.cc
 )
-target_link_libraries(nano_gicp ${PCL_LIBRARIES} ${OpenMP_LIBS} nanoflann)
+target_link_libraries(nano_gicp PUBLIC ${PCL_LIBRARIES} ${OpenMP_LIBS} nanoflann::nanoflann)
+target_include_directories(nano_gicp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Odometry Node
-add_executable(dlio_odom_node src/dlio/odom_node.cc src/dlio/odom.cc)
-add_dependencies(dlio_odom_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
+add_library(dlio_odom_node src/dlio/odom.cc)
 target_compile_options(dlio_odom_node PRIVATE ${OpenMP_FLAGS})
-target_link_libraries(dlio_odom_node ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenMP_LIBS} Threads::Threads nano_gicp)
+target_link_libraries(dlio_odom_node PUBLIC ${PCL_LIBRARIES} ${OpenMP_LIBS} nano_gicp)
+target_include_directories(dlio_odom_node PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Mapping Node
-add_executable (dlio_map_node src/dlio/map_node.cc src/dlio/map.cc)
-add_dependencies(dlio_map_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
-target_compile_options(dlio_map_node PRIVATE ${OpenMP_FLAGS})
-target_link_libraries(dlio_map_node ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenMP_LIBS} Threads::Threads)
-
-# Binaries
-install( TARGETS dlio_odom_node dlio_map_node
-         DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION} )
-install( DIRECTORY cfg launch
-         DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION} )
+# add_executable (dlio_map_node src/dlio/map_node.cc src/dlio/map.cc)
+# target_compile_options(dlio_map_node PRIVATE ${OpenMP_FLAGS})
+# target_link_libraries(dlio_map_node ${PCL_LIBRARIES} ${OpenMP_LIBS} Threads::Threads)

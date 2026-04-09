@@ -42,10 +42,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *************************************************************************/
 
-#include "dlio/dlio.h"
 #include "nano_gicp/nano_gicp.h"
-
-template class nano_gicp::NanoGICP<PointType, PointType>;
+#include "dlio/dlio.h"
 
 namespace nano_gicp {
 
@@ -391,4 +389,7 @@ bool NanoGICP<PointSource, PointTarget>::calculate_covariances(
   return true;
 }
 
-}  // namespace nano_gicp
+} // namespace nano_gicp
+
+// Explicit template instantiation must come after all member definitions
+template class nano_gicp::NanoGICP<PointType, PointType>;

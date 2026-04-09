@@ -10,35 +10,111 @@
  *                                                         *
  ***********************************************************/
 
+#include <cmath>
+
 #include "dlio/dlio.h"
 
 class dlio::OdomNode {
 
 public:
+  struct Params {
+    bool verbose = false;
 
-  OdomNode(ros::NodeHandle node_handle);
+    bool deskew = true;
+    double gravity = 9.80665;
+    bool time_offset = false;
+
+    double keyframe_thresh_dist = 0.1;
+    double keyframe_thresh_rot = 1.0;
+
+    int submap_knn = 10;
+    int submap_kcv = 10;
+    int submap_kcc = 10;
+
+    bool densemap_filtered = true;
+    bool wait_until_move = false;
+
+    double crop_size = 1.0;
+
+    bool vf_use = true;
+    double vf_res = 0.05;
+
+    bool adaptive_params = true;
+
+    Eigen::Vector3f extrinsics_baselink2imu_t = Eigen::Vector3f::Zero();
+    Eigen::Matrix3f extrinsics_baselink2imu_R = Eigen::Matrix3f::Identity();
+    Eigen::Vector3f extrinsics_baselink2lidar_t = Eigen::Vector3f::Zero();
+    Eigen::Matrix3f extrinsics_baselink2lidar_R = Eigen::Matrix3f::Identity();
+
+    bool calibrate_gyro = true;
+    bool calibrate_accel = true;
+    double imu_calib_time = 3.0;
+    int imu_buffer_size = 2000;
+
+    bool gravity_align = true;
+    bool imu_calibrate = true;
+
+    int gicp_min_num_points = 100;
+    int gicp_k_correspondences = 20;
+    double gicp_max_corr_dist = std::sqrt(std::numeric_limits<double>::max());
+    int gicp_max_iter = 64;
+    double gicp_transformation_ep = 0.0005;
+    double gicp_rotation_ep = 0.0005;
+    double gicp_init_lambda_factor = 1e-9;
+
+    double geo_Kp = 1.0;
+    double geo_Kv = 1.0;
+    double geo_Kq = 1.0;
+    double geo_Kab = 1.0;
+    double geo_Kgb = 1.0;
+    double geo_abias_max = 1.0;
+    double geo_gbias_max = 1.0;
+  };
+
+  struct ImuMeas {
+    double stamp;
+    double dt; // defined as the difference between the current and the previous
+               // measurement
+    Eigen::Vector3f ang_vel;
+    Eigen::Vector3f lin_accel;
+  };
+
+  struct ImuBias {
+    Eigen::Vector3f gyro;
+    Eigen::Vector3f accel;
+  };
+
+  struct Frames {
+    Eigen::Vector3f b;
+    Eigen::Vector3f w;
+  };
+
+  struct Velocity {
+    Frames lin;
+    Frames ang;
+  };
+
+  struct State {
+    Eigen::Vector3f p;    // position in world frame
+    Eigen::Quaternionf q; // orientation in world frame
+    Velocity v;
+    ImuBias b; // imu biases in body frame
+  };
+
+  OdomNode(const Params &params);
   ~OdomNode();
 
   void start();
+  State getState() const { return state; };
+
+  void callbackPointCloud(const pcl::PointCloud<PointType>::ConstPtr &pc,
+                          double stamp);
+  void callbackImu(const ImuMeas &imu);
 
 private:
+  void getParams(const Params &params);
 
-  struct State;
-  struct ImuMeas;
-
-  void getParams();
-
-  void callbackPointCloud(const sensor_msgs::PointCloud2ConstPtr& pc);
-  void callbackImu(const sensor_msgs::Imu::ConstPtr& imu);
-
-  void publishPose(const ros::TimerEvent& e);
-
-  void publishToROS(pcl::PointCloud<PointType>::ConstPtr published_cloud, Eigen::Matrix4f T_cloud);
-  void publishCloud(pcl::PointCloud<PointType>::ConstPtr published_cloud, Eigen::Matrix4f T_cloud);
-  void publishKeyframe(std::pair<std::pair<Eigen::Vector3f, Eigen::Quaternionf>,
-                       pcl::PointCloud<PointType>::ConstPtr> kf, ros::Time timestamp);
-
-  void getScanFromROS(const sensor_msgs::PointCloud2ConstPtr& pc);
+  void getScanFromROS(const pcl::PointCloud<PointType>::ConstPtr &pc, double stamp);
   void preprocessPoints();
   void deskewPointcloud();
   void initializeInputTarget();
@@ -70,7 +146,7 @@ private:
   void computeSpaciousness();
   void computeDensity();
 
-  sensor_msgs::Imu::Ptr transformImu(const sensor_msgs::Imu::ConstPtr& imu);
+  ImuMeas transformImu(const ImuMeas &imu);
 
   void updateKeyframes();
   void computeConvexHull();
@@ -82,27 +158,6 @@ private:
 
   void debug();
 
-  ros::NodeHandle nh;
-  ros::Timer publish_timer;
-
-  // Subscribers
-  ros::Subscriber lidar_sub;
-  ros::Subscriber imu_sub;
-
-  // Publishers
-  ros::Publisher odom_pub;
-  ros::Publisher pose_pub;
-  ros::Publisher path_pub;
-  ros::Publisher kf_pose_pub;
-  ros::Publisher kf_cloud_pub;
-  ros::Publisher deskewed_pub;
-
-  // ROS Msgs
-  nav_msgs::Odometry odom_ros;
-  geometry_msgs::PoseStamped pose_ros;
-  nav_msgs::Path path_ros;
-  geometry_msgs::PoseArray kf_pose_ros;
-
   // Flags
   std::atomic<bool> dlio_initialized;
   std::atomic<bool> first_valid_scan;
@@ -113,12 +168,6 @@ private:
   std::atomic<bool> deskew_status;
   std::atomic<int> deskew_size;
 
-  // Threads
-  std::thread publish_thread;
-  std::thread publish_keyframe_thread;
-  std::thread metrics_thread;
-  std::thread debug_thread;
-
   // Trajectory
   std::vector<std::pair<Eigen::Vector3f, Eigen::Quaternionf>> trajectory;
   double length_traversed;
@@ -126,19 +175,13 @@ private:
   // Keyframes
   std::vector<std::pair<std::pair<Eigen::Vector3f, Eigen::Quaternionf>,
                         pcl::PointCloud<PointType>::ConstPtr>> keyframes;
-  std::vector<ros::Time> keyframe_timestamps;
+  std::vector<double> keyframe_timestamps;
   std::vector<std::shared_ptr<const nano_gicp::CovarianceList>> keyframe_normals;
   std::vector<Eigen::Matrix4f, Eigen::aligned_allocator<Eigen::Matrix4f>> keyframe_transformations;
   std::mutex keyframes_mutex;
 
   // Sensor Type
   dlio::SensorType sensor;
-
-  // Frames
-  std::string odom_frame;
-  std::string baselink_frame;
-  std::string lidar_frame;
-  std::string imu_frame;
 
   // Preprocessing
   pcl::CropBox<PointType> crop;
@@ -173,7 +216,7 @@ private:
   std::mutex main_loop_running_mutex;
 
   // Timestamps
-  ros::Time scan_header_stamp;
+  double scan_header_stamp;
   double scan_stamp;
   double prev_scan_stamp;
   double scan_dt;
@@ -206,17 +249,12 @@ private:
   }; Extrinsics extrinsics;
 
   // IMU
-  ros::Time imu_stamp;
+  double imu_stamp;
   double first_imu_stamp;
   double prev_imu_stamp;
   double imu_dp, imu_dq_deg;
 
-  struct ImuMeas {
-    double stamp;
-    double dt; // defined as the difference between the current and the previous measurement
-    Eigen::Vector3f ang_vel;
-    Eigen::Vector3f lin_accel;
-  }; ImuMeas imu_meas;
+  ImuMeas imu_meas;
 
   boost::circular_buffer<ImuMeas> imu_buffer;
   std::mutex mtx_imu;
@@ -238,27 +276,7 @@ private:
   }; Geo geo;
 
   // State Vector
-  struct ImuBias {
-    Eigen::Vector3f gyro;
-    Eigen::Vector3f accel;
-  };
-
-  struct Frames {
-    Eigen::Vector3f b;
-    Eigen::Vector3f w;
-  };
-
-  struct Velocity {
-    Frames lin;
-    Frames ang;
-  };
-
-  struct State {
-    Eigen::Vector3f p; // position in world frame
-    Eigen::Quaternionf q; // orientation in world frame
-    Velocity v;
-    ImuBias b; // imu biases in body frame
-  }; State state;
+  State state;
 
   struct Pose {
     Eigen::Vector3f p; // position in world frame
@@ -279,7 +297,7 @@ private:
   int numProcessors;
 
   // Parameters
-  std::string version_;
+  std::string version_ = "1.1.1";
   int num_threads_;
   bool verbose;
 
