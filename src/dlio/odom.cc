@@ -391,14 +391,18 @@ void dlio::OdomNode::deskewPointcloud() {
 
   // compute offset between sweep reference time and first point timestamp
   double offset = 0.0;
-  if (this->time_offset_) {
-    offset = sweep_ref_time - extract_point_time(*points_unique_timestamps.begin());
+  auto first_unique_timestamp_it = points_unique_timestamps.begin();
+  if (this->time_offset_
+      && first_unique_timestamp_it != points_unique_timestamps.end()) {
+    offset = sweep_ref_time - extract_point_time(*first_unique_timestamp_it);
   }
 
   // build list of unique timestamps and indices of first point with each timestamp
-  for (size_t i = 0; i < points_unique_timestamps.size(); i++) {
-    timestamps.push_back(extract_point_time(points_unique_timestamps[i]) + offset);
-    unique_time_indices.push_back(points_unique_timestamps[i].index());
+  for (auto it = points_unique_timestamps.begin();
+       it != points_unique_timestamps.end();
+       ++it) {
+    timestamps.push_back(extract_point_time(*it) + offset);
+    unique_time_indices.push_back(it->index());
   }
   unique_time_indices.push_back(deskewed_scan_->points.size());
 
