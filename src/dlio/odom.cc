@@ -396,9 +396,9 @@ void dlio::OdomNode::deskewPointcloud() {
   }
 
   // build list of unique timestamps and indices of first point with each timestamp
-  for (const auto& indexed_pt : points_unique_timestamps) {
-    timestamps.push_back(extract_point_time(indexed_pt) + offset);
-    unique_time_indices.push_back(indexed_pt.index());
+  for (size_t i = 0; i < points_unique_timestamps.size(); i++) {
+    timestamps.push_back(extract_point_time(points_unique_timestamps[i]) + offset);
+    unique_time_indices.push_back(points_unique_timestamps[i].index());
   }
   unique_time_indices.push_back(deskewed_scan_->points.size());
 
