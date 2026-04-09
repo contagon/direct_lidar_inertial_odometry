@@ -332,77 +332,72 @@ void dlio::OdomNode::deskewPointcloud() {
 
   // sort points by timestamp and build list of timestamps
   std::function<bool(const PointType&, const PointType&)> point_time_cmp;
-  std::function<bool(boost::range::index_value<PointType&, long>,
-                     boost::range::index_value<PointType&, long>)> point_time_neq;
-  std::function<double(boost::range::index_value<PointType&, long>)> extract_point_time;
+  std::function<bool(const PointType&, const PointType&)> point_time_eq;
+  std::function<double(const PointType&)> extract_point_time;
 
   if (this->sensor == dlio::SensorType::OUSTER) {
 
     point_time_cmp = [](const PointType& p1, const PointType& p2)
       { return p1.t < p2.t; };
-    point_time_neq = [](boost::range::index_value<PointType&, long> p1,
-                        boost::range::index_value<PointType&, long> p2)
-      { return p1.value().t != p2.value().t; };
-    extract_point_time = [&sweep_ref_time](boost::range::index_value<PointType&, long> pt)
-      { return sweep_ref_time + pt.value().t * 1e-9f; };
+    point_time_eq = [](const PointType& p1, const PointType& p2)
+      { return p1.t == p2.t; };
+    extract_point_time = [&sweep_ref_time](const PointType& pt)
+      { return sweep_ref_time + pt.t * 1e-9f; };
 
   } else if (this->sensor == dlio::SensorType::VELODYNE) {
 
     point_time_cmp = [](const PointType& p1, const PointType& p2)
       { return p1.time < p2.time; };
-    point_time_neq = [](boost::range::index_value<PointType&, long> p1,
-                        boost::range::index_value<PointType&, long> p2)
-      { return p1.value().time != p2.value().time; };
-    extract_point_time = [&sweep_ref_time](boost::range::index_value<PointType&, long> pt)
-      { return sweep_ref_time + pt.value().time; };
+    point_time_eq = [](const PointType& p1, const PointType& p2)
+      { return p1.time == p2.time; };
+    extract_point_time = [&sweep_ref_time](const PointType& pt)
+      { return sweep_ref_time + pt.time; };
 
   } else if (this->sensor == dlio::SensorType::HESAI) {
 
     point_time_cmp = [](const PointType& p1, const PointType& p2)
       { return p1.timestamp < p2.timestamp; };
-    point_time_neq = [](boost::range::index_value<PointType&, long> p1,
-                        boost::range::index_value<PointType&, long> p2)
-      { return p1.value().timestamp != p2.value().timestamp; };
-    extract_point_time = [&sweep_ref_time](boost::range::index_value<PointType&, long> pt)
-      { return pt.value().timestamp; };
+    point_time_eq = [](const PointType& p1, const PointType& p2)
+      { return p1.timestamp == p2.timestamp; };
+    extract_point_time = [&sweep_ref_time](const PointType& pt)
+      { return pt.timestamp; };
 
   } else if (this->sensor == dlio::SensorType::LIVOX) {
     point_time_cmp = [](const PointType& p1, const PointType& p2)
       { return p1.timestamp < p2.timestamp; };
-    point_time_neq = [](boost::range::index_value<PointType&, long> p1,
-                        boost::range::index_value<PointType&, long> p2)
-      { return p1.value().timestamp != p2.value().timestamp; };
-    extract_point_time = [&sweep_ref_time](boost::range::index_value<PointType&, long> pt)
-      { return pt.value().timestamp * 1e-9f; };
+    point_time_eq = [](const PointType& p1, const PointType& p2)
+      { return p1.timestamp == p2.timestamp; };
+    extract_point_time = [&sweep_ref_time](const PointType& pt)
+      { return pt.timestamp * 1e-9f; };
   }
 
   // copy points into deskewed_scan_ in order of timestamp
   std::partial_sort_copy(this->original_scan->points.begin(), this->original_scan->points.end(),
                          deskewed_scan_->points.begin(), deskewed_scan_->points.end(), point_time_cmp);
 
-  // filter unique timestamps
-  auto points_unique_timestamps = deskewed_scan_->points
-                                  | boost::adaptors::indexed()
-                                  | boost::adaptors::adjacent_filtered(point_time_neq);
-
-  // extract timestamps from points and put them in their own list
+  // extract unique timestamps from points and put them in their own list
   std::vector<double> timestamps;
   std::vector<int> unique_time_indices;
 
+  if (deskewed_scan_->points.empty()) {
+    return;
+  }
+
   // compute offset between sweep reference time and first point timestamp
   double offset = 0.0;
-  auto first_unique_timestamp_it = points_unique_timestamps.begin();
-  if (this->time_offset_
-      && first_unique_timestamp_it != points_unique_timestamps.end()) {
-    offset = sweep_ref_time - extract_point_time(*first_unique_timestamp_it);
+  if (this->time_offset_) {
+    offset = sweep_ref_time - extract_point_time(deskewed_scan_->points.front());
   }
 
   // build list of unique timestamps and indices of first point with each timestamp
-  for (auto it = points_unique_timestamps.begin();
-       it != points_unique_timestamps.end();
-       ++it) {
-    timestamps.push_back(extract_point_time(*it) + offset);
-    unique_time_indices.push_back(it->index());
+  timestamps.push_back(extract_point_time(deskewed_scan_->points.front()) + offset);
+  unique_time_indices.push_back(0);
+
+  for (size_t i = 1; i < deskewed_scan_->points.size(); i++) {
+    if (!point_time_eq(deskewed_scan_->points[i - 1], deskewed_scan_->points[i])) {
+      timestamps.push_back(extract_point_time(deskewed_scan_->points[i]) + offset);
+      unique_time_indices.push_back(i);
+    }
   }
   unique_time_indices.push_back(deskewed_scan_->points.size());
 
