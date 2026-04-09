@@ -146,6 +146,22 @@ dlio::OdomNode::OdomNode(const Params &params) {
 
 dlio::OdomNode::~OdomNode() {}
 
+pcl::PointCloud<PointType>::ConstPtr dlio::OdomNode::getCurrentScan() const {
+  pcl::PointCloud<PointType>::Ptr current_scan_lidar(
+      std::make_shared<pcl::PointCloud<PointType>>());
+
+  if (!this->current_scan || this->current_scan->empty()) {
+    return current_scan_lidar;
+  }
+
+  const Eigen::Matrix4f world_T_lidar =
+      this->T_prior * this->extrinsics.baselink2lidar_T;
+  const Eigen::Matrix4f lidar_T_world = world_T_lidar.inverse();
+
+  pcl::transformPointCloud(*this->current_scan, *current_scan_lidar, lidar_T_world);
+  return current_scan_lidar;
+}
+
 void dlio::OdomNode::getParams(const Params &params) {
   this->verbose = params.verbose;
 

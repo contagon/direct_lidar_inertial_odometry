@@ -106,6 +106,8 @@ public:
 
   void start();
   State getState() const { return state; };
+  pcl::PointCloud<PointType>::ConstPtr getMap() const { return submap_cloud; };
+  pcl::PointCloud<PointType>::ConstPtr getCurrentScan() const;
 
   void callbackPointCloud(const pcl::PointCloud<PointType>::ConstPtr &pc,
                           double stamp);
